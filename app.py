@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import os
 from datetime import datetime, date
+import pandas as pd
 
 # =================================
 # CONFIGURACIÓN
@@ -74,7 +75,7 @@ crear_tablas()
 actualizar_tablas()
 
 # =================================
-# SEGURIDAD (SIN LIBRERÍAS EXTERNAS)
+# SEGURIDAD SIN DEPENDENCIAS
 # =================================
 def hash_password(password):
     salt = os.urandom(16)
@@ -194,7 +195,7 @@ if st.session_state.get("rol") == "docente":
         st.warning("No hay estudiantes registrados")
 
     # =========================
-    # HISTORIAL DE DEPÓSITOS
+    # HISTORIAL DE DEPÓSITOS (TABLA PRO)
     # =========================
     st.subheader("📜 Historial de Depósitos")
 
@@ -217,15 +218,19 @@ if st.session_state.get("rol") == "docente":
     except:
         depositos = []
 
-    if depositos:
-        for d in depositos:
-            st.markdown(f"""
-            **Depósito #{d[0]}**  
-            👤 Estudiante: {d[1]}  
-            💰 Monto: ${d[2]:,.2f}  
-            📅 Fecha: {d[3]}
-            ---
-            """)
+    if depositos and len(depositos) > 0:
+
+        df = pd.DataFrame(depositos, columns=[
+            "ID",
+            "Estudiante",
+            "Monto",
+            "Fecha"
+        ])
+
+        df["Monto"] = df["Monto"].apply(lambda x: f"${x:,.2f}")
+
+        st.dataframe(df, use_container_width=True)
+
     else:
         st.info("No hay depósitos registrados")
 
@@ -264,7 +269,7 @@ if st.session_state.get("rol") == "docente":
                     st.warning("Crédito negado")
                     st.rerun()
     else:
-        st.info("No hay solicitudes de crédito")
+        st.info("No hay solicitudes")
 
     # =========================
     # RESET PASSWORD
