@@ -136,7 +136,7 @@ elif menu == "Ingreso":
         if user:
             st.session_state["usuario"] = user[2]
             st.success("Ingreso exitoso")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Credenciales incorrectas")
 
@@ -154,7 +154,7 @@ if "usuario" in st.session_state:
 
     if st.sidebar.button("Cerrar sesión"):
         del st.session_state["usuario"]
-        st.experimental_rerun()
+        st.rerun()
 
     st.sidebar.markdown("---")
 
@@ -173,7 +173,7 @@ if "usuario" in st.session_state:
                 actualizar_saldo(usuario, monto)
                 registrar_movimiento(usuario, "Depósito", monto)
                 st.success("Depósito realizado")
-                st.experimental_rerun()
+                st.rerun()
 
         elif opcion == "Retirar":
             monto = st.number_input("Monto a retirar", min_value=1.0)
@@ -182,7 +182,7 @@ if "usuario" in st.session_state:
                     actualizar_saldo(usuario, -monto)
                     registrar_movimiento(usuario, "Retiro", monto)
                     st.success("Retiro realizado")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Fondos insuficientes")
 
@@ -238,7 +238,7 @@ if "usuario" in st.session_state:
                     )
                     conn.commit()
                     st.success("Crédito aprobado")
-                    st.experimental_rerun()
+                    st.rerun()
 
                 if col2.button("Negar", key=f"negar_{cr[0]}"):
                     c.execute(
@@ -247,4 +247,4 @@ if "usuario" in st.session_state:
                     )
                     conn.commit()
                     st.warning("Crédito negado")
-                    st.experimental_rerun()
+                    st.rerun()
