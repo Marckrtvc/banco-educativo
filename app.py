@@ -44,7 +44,7 @@ def crear_tablas():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         estudiante TEXT,
         monto REAL,
-        interes REAL,
+        interes INTEGER,
         total REAL,
         fecha TEXT
     )
@@ -63,7 +63,7 @@ def crear_tablas():
 crear_tablas()
 
 # ===============================
-# FUNCIONES AUXILIARES
+# FUNCIONES
 # ===============================
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -83,13 +83,13 @@ menu = st.sidebar.selectbox(
 )
 
 # ===============================
-# REGISTRAR DOCENTE (UNO SOLO)
+# REGISTRAR DOCENTE
 # ===============================
 if menu == "Registrar Docente":
     st.subheader("Registro de Docente")
 
     if existe_docente():
-        st.warning("⚠️ Ya existe un docente registrado.")
+        st.warning("Ya existe un docente registrado.")
     else:
         usuario = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
@@ -121,19 +121,19 @@ elif menu == "Login Docente":
         if docente:
             st.success("Bienvenido Docente")
 
-            st.markdown("---")
+            estudiantes = [e[0] for e in c.execute("SELECT usuario FROM estudiantes").fetchall()]
+
+            # -------------------------------
+            # DEPÓSITOS
+            # -------------------------------
             st.subheader("📥 Depósito a Estudiantes")
 
-            estudiantes = c.execute("SELECT usuario FROM estudiantes").fetchall()
-            estudiante = st.selectbox("Estudiante", [e[0] for e in estudiantes])
+            estudiante = st.selectbox("Estudiante", estudiantes)
             monto = st.number_input("Monto", min_value=0.0)
             fecha = st.date_input("Fecha del depósito")
 
             if st.button("Realizar Depósito"):
-                c.execute(
-                    "UPDATE estudiantes SET saldo = saldo + ? WHERE usuario=?",
-                    (monto, estudiante)
-                )
+                c.execute("UPDATE estudiantes SET saldo = saldo + ? WHERE usuario=?", (monto, estudiante))
                 c.execute(
                     "INSERT INTO depositos (estudiante, monto, fecha) VALUES (?, ?, ?)",
                     (estudiante, monto, fecha.strftime("%Y-%m-%d"))
@@ -141,52 +141,50 @@ elif menu == "Login Docente":
                 conn.commit()
                 st.success("Depósito realizado")
 
-            st.markdown("---")
-            st.subheader("💰 Total de Depósitos")
-
-            total = c.execute("SELECT SUM(monto) FROM depositos").fetchone()[0]
-            st.info(f"Total depositado: ${total if total else 0}")
-
-            st.markdown("---")
             st.subheader("📜 Historial de Depósitos")
-            st.dataframe(
-                c.execute("SELECT * FROM depositos").fetchall(),
-                use_container_width=True
-            )
+            st.dataframe(c.execute("SELECT * FROM depositos").fetchall(), use_container_width=True)
 
-            st.markdown("---")
+            # -------------------------------
+            # CRÉDITOS
+            # -------------------------------
             st.subheader("💳 Aprobar Crédito")
 
-            estudiante = st.selectbox("Estudiante para crédito", [e[0] for e in estudiantes])
-            monto = st.number_input("Monto del crédito", min_value=0.0)
-
-            interes = st.selectbox(
-                "Interés (%)",
-                [2, 3, 4]
-            )
+            estudiante_credito = st.selectbox("Estudiante crédito", estudiantes)
+            monto_credito = st.number_input("Monto crédito", min_value=0.0)
+            interes = st.selectbox("Interés (%)", [2, 3, 4])
 
             if st.button("Aprobar Crédito"):
-                interes_valor = monto * (interes / 100)
-                total = monto + interes_valor
+                valor_interes = monto_credito * (interes / 100)
+                total = monto_credito + valor_interes
 
+                c.execute("UPDATE estudiantes SET saldo = saldo + ? WHERE usuario=?", (monto_credito, estudiante_credito))
                 c.execute(
-                    "UPDATE estudiantes SET saldo = saldo + ? WHERE usuario=?",
-                    (monto, estudiante)
-                )
-                c.execute(
-                    """
-                    INSERT INTO creditos (estudiante, monto, interes, total, fecha)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (estudiante, monto, interes, total, datetime.now().strftime("%Y-%m-%d"))
+                    "INSERT INTO creditos (estudiante, monto, interes, total, fecha) VALUES (?, ?, ?, ?, ?)",
+                    (estudiante_credito, monto_credito, interes, total, datetime.now().strftime("%Y-%m-%d"))
                 )
                 conn.commit()
                 st.success(f"Crédito aprobado. Total a pagar: ${total}")
 
-            st.markdown("---")
             st.subheader("📜 Historial de Créditos")
+            st.dataframe(c.execute("SELECT * FROM creditos").fetchall(), use_container_width=True)
+
+            # -------------------------------
+            # 🔴 HISTORIAL DE RETIROS (AQUÍ ESTABA LO QUE FALTABA)
+            # -------------------------------
+            st.subheader("🏧 Historial General de Retiros")
             st.dataframe(
-                c.execute("SELECT * FROM creditos").fetchall(),
+                c.execute("SELECT * FROM retiros").fetchall(),
+                use_container_width=True
+            )
+
+            st.subheader("🏧 Historial de Retiros por Estudiante")
+            est_retiro = st.selectbox("Selecciona estudiante", estudiantes, key="retiros_docente")
+
+            st.dataframe(
+                c.execute(
+                    "SELECT * FROM retiros WHERE estudiante=?",
+                    (est_retiro,)
+                ).fetchall(),
                 use_container_width=True
             )
 
@@ -228,21 +226,15 @@ elif menu == "Login Estudiante":
 
         if estudiante:
             st.success("Bienvenido")
-
             saldo = estudiante[3]
             st.info(f"Saldo actual: ${saldo}")
 
-            st.markdown("---")
             st.subheader("🏧 Retiro")
-
             monto = st.number_input("Monto a retirar", min_value=0.0)
 
             if st.button("Retirar"):
                 if monto <= saldo:
-                    c.execute(
-                        "UPDATE estudiantes SET saldo = saldo - ? WHERE usuario=?",
-                        (monto, usuario)
-                    )
+                    c.execute("UPDATE estudiantes SET saldo = saldo - ? WHERE usuario=?", (monto, usuario))
                     c.execute(
                         "INSERT INTO retiros (estudiante, monto, fecha) VALUES (?, ?, ?)",
                         (usuario, monto, datetime.now().strftime("%Y-%m-%d"))
@@ -252,13 +244,9 @@ elif menu == "Login Estudiante":
                 else:
                     st.error("Saldo insuficiente")
 
-            st.markdown("---")
-            st.subheader("📜 Historial de Retiros")
+            st.subheader("📜 Mi Historial de Retiros")
             st.dataframe(
-                c.execute(
-                    "SELECT * FROM retiros WHERE estudiante=?",
-                    (usuario,)
-                ).fetchall(),
+                c.execute("SELECT * FROM retiros WHERE estudiante=?", (usuario,)).fetchall(),
                 use_container_width=True
             )
 
