@@ -66,14 +66,14 @@ crear_tablas()
 # =================================
 def hash_password(password):
     salt = os.urandom(16)
-    hashed = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000)
     return salt.hex() + hashed.hex()
 
 def verificar_password(password, stored):
     try:
         salt = bytes.fromhex(stored[:32])
         stored_hash = stored[32:]
-        new_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000).hex()
+        new_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000).hex()
         return new_hash == stored_hash
     except:
         return False
@@ -83,7 +83,7 @@ def existe_docente():
     return c.fetchone()[0] > 0
 
 # =================================
-# UI
+# UI GENERAL
 # =================================
 st.title("🏦 Banco Educativo PRO")
 
@@ -95,7 +95,8 @@ menu = st.sidebar.selectbox("Menú", ["Inicio", "Registro", "Ingreso"])
 if "usuario" in st.session_state:
     st.sidebar.markdown("---")
     st.sidebar.write(f"👤 {st.session_state['usuario']}")
-    if st.sidebar.button("Cerrar sesión", key="btn_logout"):
+
+    if st.sidebar.button("Cerrar sesión", key="logout"):
         st.session_state.clear()
         st.rerun()
 
@@ -110,7 +111,7 @@ if menu == "Registro":
     password = st.text_input("Contraseña", type="password", key="reg_pass")
     rol = st.selectbox("Rol", ["estudiante", "docente"], key="reg_rol")
 
-    if st.button("Registrar", key="btn_registrar"):
+    if st.button("Registrar", key="btn_reg"):
         if rol == "docente" and existe_docente():
             st.error("Ya existe un docente registrado")
         else:
@@ -151,6 +152,9 @@ if st.session_state.get("rol") == "docente":
 
     st.header("👨‍🏫 Panel Docente")
 
+    # =========================
+    # ESTUDIANTES
+    # =========================
     estudiantes_data = c.execute(
         "SELECT usuario FROM usuarios WHERE rol='estudiante'"
     ).fetchall()
@@ -167,7 +171,7 @@ if st.session_state.get("rol") == "docente":
         monto = st.number_input("Monto", min_value=1.0, key="doc_monto")
         fecha = st.date_input("Fecha", value=date.today(), key="doc_fecha")
 
-        if st.button("Depositar", key="btn_deposito"):
+        if st.button("Depositar", key="btn_dep"):
             c.execute(
                 "UPDATE usuarios SET saldo = saldo + ? WHERE usuario=?",
                 (monto, estudiante)
@@ -181,12 +185,14 @@ if st.session_state.get("rol") == "docente":
     else:
         st.warning("No hay estudiantes registrados")
 
+    st.divider()
+
     # =========================
     # HISTORIAL DEPÓSITOS
     # =========================
     st.subheader("📜 Historial de Depósitos")
 
-    filtro = st.selectbox("Filtrar", ["Todos"] + estudiantes, key="doc_filtro")
+    filtro = st.selectbox("Filtrar", ["Todos"] + estudiantes, key="filtro_dep")
 
     if filtro == "Todos":
         depositos = c.execute(
@@ -203,7 +209,97 @@ if st.session_state.get("rol") == "docente":
         df["Monto"] = df["Monto"].apply(lambda x: f"${x:,.2f}")
         st.dataframe(df, use_container_width=True)
     else:
-        st.info("No hay depósitos registrados")
+        st.info("No hay depósitos")
+
+    st.divider()
+
+    # =========================
+    # CRÉDITOS
+    # =========================
+    st.subheader("💳 Créditos")
+
+    creditos = c.execute("""
+        SELECT id, estudiante, monto, interes, total, estado, fecha
+        FROM creditos
+        ORDER BY id DESC
+    """).fetchall()
+
+    if creditos:
+        for cr in creditos:
+            with st.expander(f"Crédito #{cr[0]} | {cr[1]} | {cr[5]}"):
+
+                st.write(f"Monto: ${cr[2]:,.2f}")
+                st.write(f"Interés: {cr[3]}%")
+                st.write(f"Total: ${cr[4]:,.2f}")
+                st.write(f"Estado: {cr[5]}")
+
+                if cr[5] == "Pendiente":
+
+                    if st.button("Aprobar", key=f"ap_{cr[0]}"):
+                        c.execute(
+                            "UPDATE usuarios SET saldo = saldo + ? WHERE usuario=?",
+                            (cr[2], cr[1])
+                        )
+                        c.execute(
+                            "UPDATE creditos SET estado='Aprobado' WHERE id=?",
+                            (cr[0],)
+                        )
+                        conn.commit()
+                        st.success("Aprobado")
+                        st.rerun()
+
+                    if st.button("Negar", key=f"ng_{cr[0]}"):
+                        c.execute(
+                            "UPDATE creditos SET estado='Negado' WHERE id=?",
+                            (cr[0],)
+                        )
+                        conn.commit()
+                        st.warning("Negado")
+                        st.rerun()
+    else:
+        st.info("No hay créditos")
+
+    st.divider()
+
+    # =========================
+    # RETIROS
+    # =========================
+    st.subheader("🏧 Historial de Retiros")
+
+    retiros = c.execute("""
+        SELECT id, estudiante, monto, fecha
+        FROM retiros
+        ORDER BY id DESC
+    """).fetchall()
+
+    if retiros:
+        df = pd.DataFrame(retiros, columns=["ID", "Estudiante", "Monto", "Fecha"])
+        df["Monto"] = df["Monto"].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No hay retiros")
+
+    st.divider()
+
+    # =========================
+    # RESET CONTRASEÑA
+    # =========================
+    st.subheader("🔑 Restablecer contraseña")
+
+    if estudiantes:
+        est = st.selectbox("Estudiante", estudiantes, key="reset_est")
+        nueva = st.text_input("Nueva contraseña", type="password", key="reset_pass")
+
+        if st.button("Restablecer", key="btn_reset"):
+            if nueva.strip() == "":
+                st.error("No puede estar vacía")
+            else:
+                c.execute(
+                    "UPDATE usuarios SET password=? WHERE usuario=?",
+                    (hash_password(nueva), est)
+                )
+                conn.commit()
+                st.success("Contraseña actualizada")
 
 # =================================
 # PANEL ESTUDIANTE
@@ -212,19 +308,22 @@ if st.session_state.get("rol") == "estudiante":
 
     st.header("🎓 Panel Estudiante")
 
-    c.execute("SELECT saldo FROM usuarios WHERE usuario=?", (st.session_state["usuario"],))
+    c.execute(
+        "SELECT saldo FROM usuarios WHERE usuario=?",
+        (st.session_state["usuario"],)
+    )
     result = c.fetchone()
     saldo = result[0] if result else 0
 
-    st.info(f"Saldo actual: ${saldo:,.2f}")
+    st.info(f"Saldo: ${saldo:,.2f}")
 
     # =========================
     # CRÉDITO
     # =========================
-    st.subheader("💳 Solicitar Crédito")
+    st.subheader("💳 Solicitar crédito")
 
-    monto = st.number_input("Monto", min_value=1.0, key="est_monto_credito")
-    interes = st.selectbox("Interés (%)", [2, 3, 4], key="est_interes")
+    monto = st.number_input("Monto", min_value=1.0, key="est_credito")
+    interes = st.selectbox("Interés", [2, 3, 4], key="est_interes")
 
     if st.button("Solicitar", key="btn_credito"):
         total = monto + (monto * interes / 100)
@@ -263,15 +362,18 @@ if st.session_state.get("rol") == "estudiante":
             st.error("Saldo insuficiente")
 
     # =========================
-    # CONTRASEÑA
+    # PASSWORD
     # =========================
     st.subheader("🔑 Cambiar contraseña")
 
-    actual = st.text_input("Actual", type="password", key="est_pass_actual")
-    nueva = st.text_input("Nueva", type="password", key="est_pass_nueva")
+    actual = st.text_input("Actual", type="password", key="est_pass_act")
+    nueva = st.text_input("Nueva", type="password", key="est_pass_new")
 
     if st.button("Actualizar", key="btn_pass"):
-        c.execute("SELECT password FROM usuarios WHERE usuario=?", (st.session_state["usuario"],))
+        c.execute(
+            "SELECT password FROM usuarios WHERE usuario=?",
+            (st.session_state["usuario"],)
+        )
         saved = c.fetchone()
 
         if saved and verificar_password(actual, saved[0]):
@@ -280,6 +382,6 @@ if st.session_state.get("rol") == "estudiante":
                 (hash_password(nueva), st.session_state["usuario"])
             )
             conn.commit()
-            st.success("Contraseña actualizada")
+            st.success("Actualizada")
         else:
-            st.error("Contraseña incorrecta")
+            st.error("Incorrecta")
