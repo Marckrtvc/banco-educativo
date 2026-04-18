@@ -26,6 +26,7 @@ def crear_tablas():
         saldo REAL DEFAULT 0
     )
     """)
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS movimientos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,9 +36,10 @@ def crear_tablas():
         fecha TEXT
     )
     """)
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS creditos (
-        id INTEGER PRIMARY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT,
         monto REAL,
         interes REAL,
@@ -46,6 +48,7 @@ def crear_tablas():
         fecha TEXT
     )
     """)
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS retiros (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +58,7 @@ def crear_tablas():
         fecha TEXT
     )
     """)
+
     conn.commit()
 
 crear_tablas()
