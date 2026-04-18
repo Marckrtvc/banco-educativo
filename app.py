@@ -4,14 +4,14 @@ import hashlib
 import random
 from datetime import datetime
 
-# -------------------------
-# CONFIGURACIÓN INICIAL
-# -------------------------
+# ---------------------------------
+# CONFIGURACIÓN
+# ---------------------------------
 st.set_page_config(page_title="Banco Educativo", layout="centered")
 
-# -------------------------
+# ---------------------------------
 # BASE DE DATOS
-# -------------------------
+# ---------------------------------
 conn = sqlite3.connect("banco_educativo.db", check_same_thread=False)
 c = conn.cursor()
 
@@ -27,6 +27,15 @@ def crear_tablas():
     )
     """)
     c.execute("""
+    CREATE TABLE IF NOT EXISTS movimientos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT,
+        tipo TEXT,
+        monto REAL,
+        fecha TEXT
+    )
+    """)
+    c.execute("""
     CREATE TABLE IF NOT EXISTS creditos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT,
@@ -38,11 +47,11 @@ def crear_tablas():
     )
     """)
     c.execute("""
-    CREATE TABLE IF NOT EXISTS movimientos (
+    CREATE TABLE IF NOT EXISTS retiros (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT,
-        tipo TEXT,
         monto REAL,
+        estado TEXT,
         fecha TEXT
     )
     """)
@@ -50,9 +59,9 @@ def crear_tablas():
 
 crear_tablas()
 
-# -------------------------
-# FUNCIONES AUXILIARES
-# -------------------------
+# ---------------------------------
+# FUNCIONES
+# ---------------------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -92,19 +101,16 @@ def registrar_movimiento(usuario, tipo, monto):
     )
     conn.commit()
 
-# -------------------------
+# ---------------------------------
 # INTERFAZ GENERAL
-# -------------------------
+# ---------------------------------
 st.title("🏦 Banco Educativo Virtual")
 
-menu = st.sidebar.selectbox(
-    "Menú",
-    ["Inicio", "Registro", "Ingreso"]
-)
+menu = st.sidebar.selectbox("Menú", ["Inicio", "Registro", "Ingreso"])
 
-# -------------------------
+# ---------------------------------
 # REGISTRO
-# -------------------------
+# ---------------------------------
 if menu == "Registro":
     st.subheader("Registro de Usuario")
 
@@ -122,9 +128,9 @@ if menu == "Registro":
         else:
             st.warning("Complete todos los campos")
 
-# -------------------------
+# ---------------------------------
 # INGRESO
-# -------------------------
+# ---------------------------------
 elif menu == "Ingreso":
     st.subheader("Ingreso al Sistema")
 
@@ -140,17 +146,17 @@ elif menu == "Ingreso":
         else:
             st.error("Credenciales incorrectas")
 
-# -------------------------
+# ---------------------------------
 # PANEL PRINCIPAL
-# -------------------------
+# ---------------------------------
 if "usuario" in st.session_state:
     user = obtener_usuario(st.session_state["usuario"])
     nombre, usuario, rol, saldo = user[1], user[2], user[4], user[5]
 
     st.sidebar.markdown("---")
-    st.sidebar.write(f"👤 **{nombre}**")
-    st.sidebar.write(f"💰 **Saldo:** ${saldo:,.2f}")
-    st.sidebar.write(f"🎓 **Rol:** {rol}")
+    st.sidebar.write(f"👤 {nombre}")
+    st.sidebar.write(f"💰 Saldo: ${saldo:,.2f}")
+    st.sidebar.write(f"🎓 Rol: {rol}")
 
     if st.sidebar.button("Cerrar sesión"):
         del st.session_state["usuario"]
@@ -158,33 +164,30 @@ if "usuario" in st.session_state:
 
     st.sidebar.markdown("---")
 
-    # -------------------------
+    # ---------------------------------
     # ESTUDIANTE
-    # -------------------------
+    # ---------------------------------
     if rol == "estudiante":
         opcion = st.selectbox(
             "Opciones",
-            ["Depositar", "Retirar", "Solicitar crédito", "Historial"]
+            ["Solicitar retiro", "Solicitar crédito", "Historial"]
         )
 
-        if opcion == "Depositar":
-            monto = st.number_input("Monto a depositar", min_value=1.0)
-            if st.button("Depositar"):
-                actualizar_saldo(usuario, monto)
-                registrar_movimiento(usuario, "Depósito", monto)
-                st.success("Depósito realizado")
-                st.rerun()
+        if opcion == "Solicitar retiro":
+            monto = st.number_input(
+                "Monto a retirar",
+                min_value=1.0,
+                max_value=saldo
+            )
 
-        elif opcion == "Retirar":
-            monto = st.number_input("Monto a retirar", min_value=1.0)
-            if st.button("Retirar"):
-                if monto <= saldo:
-                    actualizar_saldo(usuario, -monto)
-                    registrar_movimiento(usuario, "Retiro", monto)
-                    st.success("Retiro realizado")
-                    st.rerun()
-                else:
-                    st.error("Fondos insuficientes")
+            if st.button("Solicitar retiro"):
+                c.execute(
+                    "INSERT INTO retiros VALUES (NULL, ?, ?, ?, ?)",
+                    (usuario, monto, "Pendiente",
+                     datetime.now().strftime("%Y-%m-%d %H:%M"))
+                )
+                conn.commit()
+                st.success("Solicitud de retiro enviada al docente")
 
         elif opcion == "Solicitar crédito":
             monto = st.number_input("Monto solicitado", min_value=1.0)
@@ -197,54 +200,78 @@ if "usuario" in st.session_state:
                      datetime.now().strftime("%Y-%m-%d"))
                 )
                 conn.commit()
-                st.success(f"Crédito solicitado con interés del {interes*100:.0f}%")
+                st.success("Solicitud de crédito enviada al docente")
 
         elif opcion == "Historial":
             c.execute(
                 "SELECT tipo, monto, fecha FROM movimientos WHERE usuario=?",
                 (usuario,)
             )
-            movimientos = c.fetchall()
-            st.table(movimientos)
+            st.table(c.fetchall())
 
-    # -------------------------
+    # ---------------------------------
     # DOCENTE
-    # -------------------------
+    # ---------------------------------
     elif rol == "docente":
-        st.subheader("Panel Docente – Aprobación de Créditos")
 
+        # DEPÓSITO A ESTUDIANTES
+        st.subheader("Depósito a estudiantes")
+
+        c.execute("SELECT usuario FROM usuarios WHERE rol='estudiante'")
+        estudiantes = [e[0] for e in c.fetchall()]
+
+        estudiante = st.selectbox("Estudiante", estudiantes)
+        monto = st.number_input("Monto a depositar", min_value=1.0)
+
+        if st.button("Depositar"):
+            actualizar_saldo(estudiante, monto)
+            registrar_movimiento(estudiante, "Depósito docente", monto)
+            st.success("Depósito realizado")
+            st.rerun()
+
+        # CRÉDITOS
+        st.subheader("Aprobación de Créditos")
         c.execute("SELECT * FROM creditos WHERE estado='Pendiente'")
-        creditos = c.fetchall()
+        for cr in c.fetchall():
+            st.markdown(f"""
+            **Usuario:** {cr[1]}  
+            **Monto:** ${cr[2]:,.2f}  
+            **Interés:** {cr[3]*100:.0f}%
+            """)
 
-        if not creditos:
-            st.info("No hay créditos pendientes")
-        else:
-            for cr in creditos:
-                st.markdown(f"""
-                **Usuario:** {cr[1]}  
-                **Monto:** ${cr[2]:,.2f}  
-                **Interés:** {cr[3]*100:.0f}%  
-                **Total:** ${cr[4]:,.2f}
-                """)
+            col1, col2 = st.columns(2)
 
-                col1, col2 = st.columns(2)
+            if col1.button("Aprobar crédito", key=f"ap_c_{cr[0]}"):
+                actualizar_saldo(cr[1], cr[2])
+                registrar_movimiento(cr[1], "Crédito aprobado", cr[2])
+                c.execute("UPDATE creditos SET estado='Aprobado' WHERE id=?", (cr[0],))
+                conn.commit()
+                st.rerun()
 
-                if col1.button("Aprobar", key=f"aprobar_{cr[0]}"):
-                    actualizar_saldo(cr[1], cr[2])
-                    registrar_movimiento(cr[1], "Crédito aprobado", cr[2])
-                    c.execute(
-                        "UPDATE creditos SET estado='Aprobado' WHERE id=?",
-                        (cr[0],)
-                    )
-                    conn.commit()
-                    st.success("Crédito aprobado")
-                    st.rerun()
+            if col2.button("Negar crédito", key=f"ng_c_{cr[0]}"):
+                c.execute("UPDATE creditos SET estado='Negado' WHERE id=?", (cr[0],))
+                conn.commit()
+                st.rerun()
 
-                if col2.button("Negar", key=f"negar_{cr[0]}"):
-                    c.execute(
-                        "UPDATE creditos SET estado='Negado' WHERE id=?",
-                        (cr[0],)
-                    )
-                    conn.commit()
-                    st.warning("Crédito negado")
-                    st.rerun()
+        # RETIROS
+        st.subheader("Aprobación de Retiros")
+        c.execute("SELECT * FROM retiros WHERE estado='Pendiente'")
+        for r in c.fetchall():
+            st.markdown(f"""
+            **Usuario:** {r[1]}  
+            **Monto:** ${r[2]:,.2f}
+            """)
+
+            col1, col2 = st.columns(2)
+
+            if col1.button("Aprobar retiro", key=f"ap_r_{r[0]}"):
+                actualizar_saldo(r[1], -r[2])
+                registrar_movimiento(r[1], "Retiro aprobado", r[2])
+                c.execute("UPDATE retiros SET estado='Aprobado' WHERE id=?", (r[0],))
+                conn.commit()
+                st.rerun()
+
+            if col2.button("Negar retiro", key=f"ng_r_{r[0]}"):
+                c.execute("UPDATE retiros SET estado='Negado' WHERE id=?", (r[0],))
+                conn.commit()
+                st.rerun()
