@@ -82,6 +82,11 @@ def existe_docente():
     c.execute("SELECT COUNT(*) FROM usuarios WHERE rol='docente'")
     return c.fetchone()[0] > 0
 
+def obtener_saldo(usuario):
+    c.execute("SELECT saldo FROM usuarios WHERE usuario=?", (usuario,))
+    row = c.fetchone()
+    return row[0] if row else 0
+
 # =================================
 # UI GENERAL
 # =================================
@@ -159,9 +164,9 @@ if st.session_state.get("rol") == "docente":
     estudiantes = [e[0] for e in estudiantes_data]
 
     # =========================
-    # 📊 BALANCE GENERAL
+    # BALANCE GENERAL
     # =========================
-    st.subheader("📊 Balance General del Sistema")
+    st.subheader("📊 Balance General")
 
     total_dep = c.execute("SELECT SUM(monto) FROM depositos").fetchone()[0] or 0
     total_cre = c.execute("SELECT SUM(monto) FROM creditos WHERE estado='Aprobado'").fetchone()[0] or 0
@@ -310,8 +315,7 @@ if st.session_state.get("rol") == "estudiante":
 
     st.header("🎓 Panel Estudiante")
 
-    c.execute("SELECT saldo FROM usuarios WHERE usuario=?", (st.session_state["usuario"],))
-    saldo = c.fetchone()[0] if c.fetchone() else 0
+    saldo = obtener_saldo(st.session_state["usuario"])
 
     st.info(f"Saldo: ${saldo:,.2f}")
 
